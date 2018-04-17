@@ -1,0 +1,14 @@
+sibling(fred, barney).
+parent(fred, mary).
+sibling(mary, george).
+gender(george, male).
+
+jn:SymmetricProperty(sibling).
+
+parent(B,C) :- sibling(A,B), parent(A,C).
+
+brother(A,B) :- sibling(A,B), gender(B,male) .
+
+uncle(A,C) :- parent(A,B), brother(B,C).
+
+P(B,A) :- P(A,B), jn:SymmetricProperty(P).

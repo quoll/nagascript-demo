@@ -1,2 +1,4 @@
 # nagascript-demo
-Demo us Naga in Clojurescript
+Demo of Naga in Clojurescript
+
+This project runs in Figwheel, and demonstrates using Naga to parse and process rules in ClojureScript.
