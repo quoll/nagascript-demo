@@ -1,8 +1,9 @@
 (ns data.components
   (:refer-clojure :exclude [char])
-  (:require [naga.lang.pabu :as pabu :refer [read-str]]
+  (:require [naga.lang.pabu :as pabu :refer [read-str rule->str]]
             [naga.store :as store]
             [naga.store-registry :as registry]
+            [naga.data :as data]
             [naga.rules :as r]
             [naga.engine :as e]
             [asami.core]
@@ -10,45 +11,75 @@
 
 (defn slurp-to
   [file callback-fn]
-  (let [reader (js/FileReader.)]
-    (set! (.-onload reader)
-          (fn [] (callback-fn (.-result reader))))
-    (.readAsText reader file)))
+  (when file
+    (let [reader (js/FileReader.)]
+      (set! (.-onload reader)
+            (fn [] (callback-fn (.-result reader))))
+      (.readAsText reader file))))
+
+(defn get-in-db
+  [{db :in}]
+  (or db (registry/get-storage-handle {:type :memory})))
+
+(defn set-rule-state
+  [app-data file-data]
+  (let [db0 (get-in-db @app-data)
+        {:keys [rules axioms]} (read-str file-data)
+        db1 (store/assert-data db0 axioms)]
+    (swap! app-data assoc :in db1 :rules rules)))
 
 (defn set-data-state
-  [app-data file-data]
-  (swap! app-data assoc :data file-data)
-  (swap! app-data assoc :in (:axioms (read-str file-data))))
+  [fname app-data file-data]
+  (let [db0 (get-in-db @app-data)
+        js-data (and file-data (data/string->triples db0 file-data))
+        db1 (if js-data (store/assert-data db0 js-data) db0)]
+    (swap! app-data assoc :in db1)))
 
 (defn run-process
-  [app-state rules axioms]
-  (let [config {:type :memory}
-        program (r/create-program rules axioms)]
+  [rules in]
+  (let [config {:type :memory :store in}
+        program (r/create-program rules [])]
   (e/run config program)))
 
 (defn process
   [app-state]
-  (let [{:keys [rules axioms] :as program} (read-str (:data @app-state))]
-    ; (swap! app-state assoc :in axioms)
-    (let [[store stats] (run-process app-state rules axioms)
-          data (store/resolve-pattern store '[?e ?a ?v])]
-      (swap! app-state assoc :out data))))
+  (let [{:keys [rules in]} @app-state]
+    (let [[store stats] (run-process rules in)]
+      (swap! app-state assoc :out store))))
 
 (defn load-file-buttons
   "Returns a <div> element with buttons for loading a file.
    File loads go to set-data-state"
   [app-data]
   [:div
-   "Input: "
-   (sab/file-upload {:id "file" :class "file-button"} "datafile")
+   "Rule File: "
+   (sab/file-upload {:id "file"} "rulefile")
+   [:br]
+   "Data File: "
+   (sab/file-upload {:id "dfile"} "datafile")
+   [:br]
    (sab/submit-button
     {:class "load-button"
      :onClick
      (fn []
        (let [ip (.getElementById js/document "file")
-             file (aget (.-files ip) 0)]
-         (slurp-to file (partial set-data-state app-data))))}
-    "Load")])
+             df (.getElementById js/document "dfile")
+             rfile (aget (.-files ip) 0)
+             dfile (aget (.-files df) 0)]
+         (slurp-to rfile (partial set-rule-state app-data))
+         (when dfile (slurp-to dfile (partial set-data-state (.-name dfile) app-data)))))}
+    "Load")
+   (sab/submit-button
+    {:class "load-button"
+     :onClick
+     (fn []
+       (let [ip (.getElementById js/document "file")
+             df (.getElementById js/document "dfile")]
+         (set! (.-value ip) nil)
+         (set! (.-value df) nil)
+         (reset! app-data nil)))}
+    "Clear")
+   ])
 
 (defn process-button
   [app-state]
@@ -56,17 +87,24 @@
    (sab/submit-button
     {:class "process-button"
      :onClick
-     (fn [] (when (:data @app-state) (process app-state)))}
+     (fn [] (when (:rules @app-state) (process app-state)))}
     "Process")])
 
-(defn axiom-text
-  [data]
+(defn rule-text
+  [rules]
   [:table
-   [:thead
-     [:tr
-      [:th "Entity"] [:th "Attribute"] [:th "Value"]]]
    [:tbody
-     (vec (map (fn [[e a v]] [:tr [:td (str e)] [:td (str a)] [:td (str v)]]) data))]])
+    (vec (map (fn [rule] [:tr [:td (rule->str rule)]]) rules))]])
+
+(defn axiom-text
+  [db]
+  (let [data (store/resolve-pattern db '[?e ?a ?v])]
+    [:table
+     [:thead
+      [:tr
+       [:th "Entity"] [:th "Attribute"] [:th "Value"]]]
+     [:tbody
+      (vec (map (fn [[e a v]] [:tr [:td (str e)] [:td (str a)] [:td (str v)]]) data))]]))
 
 (defn disp
   [e]
@@ -74,12 +112,18 @@
   e)
 
 (defn display-data [app-data]
-  (let [{:keys [size data in out]} @app-data]
+  (let [{:keys [size in out rules]} @app-data]
     (sab/html [:div
-               [:h1 "Rule"]
+               [:h1 "Rule Demo"]
                (load-file-buttons app-data)
                [:br]
                (process-button app-data)
+               (if rules
+                 [:div
+                  [:hr]
+                  [:h2 "Rules:"]
+                  (rule-text rules)]
+                 [:div])
                (if in
                  [:div
                   [:hr]

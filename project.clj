@@ -6,7 +6,7 @@
                  [cljsjs/react "16.2.0-3"]
                  [cljsjs/react-dom "16.2.0-3"]
                  [sablono "0.8.3"]
-                 [org.clojars.quoll/naga "0.2.2"]
+                 [org.clojars.quoll/naga "0.2.3-SNAPSHOT"]
                  [org.clojars.quoll/naga-store "0.1.0"]
                  [org.clojars.quoll/asami "0.2.0"]
                  ]
@@ -33,4 +33,5 @@
                         }]
               }
   :figwheel {
+             ;; :server-port 3450
              :css-dirs ["resources/public/css"]})
