@@ -6,10 +6,9 @@
                  [cljsjs/react "16.2.0-3"]
                  [cljsjs/react-dom "16.2.0-3"]
                  [sablono "0.8.3"]
-                 [org.clojars.quoll/naga "0.2.3-SNAPSHOT"]
+                 [org.clojars.quoll/naga "0.2.3"]
                  [org.clojars.quoll/naga-store "0.1.0"]
-                 [org.clojars.quoll/asami "0.2.1-SNAPSHOT"]
-                 ]
+                 [org.clojars.quoll/asami "0.2.1"]]
   :plugins [[lein-cljsbuild "1.1.7"] [lein-figwheel "0.5.14"]]
   :clean-targets ^{:protect false} [:target-path "out" "resources/public/cljs"]
   :cljsbuild {
