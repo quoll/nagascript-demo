@@ -1,6 +1,7 @@
 (ns data.components
   (:refer-clojure :exclude [char])
-  (:require [naga.lang.pabu :as pabu :refer [read-str rule->str]]
+  (:require [clojure.string :as str]
+            [naga.lang.pabu :as pabu :refer [read-str rule->str]]
             [naga.store :as store]
             [naga.store-registry :as registry]
             [naga.data :as data]
@@ -23,29 +24,50 @@
 
 (defn set-rule-state
   [app-data file-data]
-  (let [db0 (get-in-db @app-data)
-        {:keys [rules axioms]} (read-str file-data)
-        db1 (store/assert-data db0 axioms)]
-    (swap! app-data assoc :in db1 :rules rules)))
+  (let [rtext (.getElementById js/document "rules")]
+    (set! (.-value rtext) (or file-data ""))))
 
 (defn set-data-state
   [fname app-data file-data]
+  (let [jsin (.getElementById js/document "json-in")
+        jstext (data/json-generate-string (data/parse-json-string (or file-data "")) 2)]
+    (set! (.-innerText jsin) jstext))
   (let [db0 (get-in-db @app-data)
         js-data (and file-data (data/string->triples db0 file-data))
         db1 (if js-data (store/assert-data db0 js-data) db0)]
     (swap! app-data assoc :in db1)))
 
 (defn run-process
-  [rules in]
+  [rules axioms in]
   (let [config {:type :memory :store in}
-        program (r/create-program rules [])]
+        program (r/create-program rules axioms)]
   (e/run config program)))
 
 (defn process
   [app-state]
-  (let [{:keys [rules in]} @app-state]
-    (let [[store stats] (run-process rules in)]
-      (swap! app-state assoc :out store))))
+  (let [rtext (.getElementById js/document "rules")
+        jsin-text (.getElementById js/document "json-in")
+        jsout-text (.getElementById js/document "json-out")
+        jsdiff-text (.getElementById js/document "json-diff")
+        jsin (.-innerText jsin-text)]
+    (when-let [text (.-value rtext)]
+      (let [{:keys [rules axioms]} (read-str text)
+            db0 (registry/get-storage-handle {:type :memory})
+            triples (if (seq jsin) (data/string->triples db0 jsin) [])
+            db1 (store/assert-data db0 triples)
+            [db-out stats] (run-process rules axioms db1)]
+        (swap! app-state assoc :out db-out)
+        (set! (.-innerText jsout-text) (data/store->str db-out 2))
+        (set! (.-innerText jsdiff-text) (data/delta->str db-out 2))))))
+
+(defn show-graph-click
+  []
+  (let [cb (.getElementById js/document "show-graph")
+        gr (.getElementById js/document "graphs")
+        show? (.-checked cb)]
+    (if show?
+      (.removeAttribute gr "hidden")
+      (.setAttribute gr "hidden" (not show?)))))
 
 (defn load-file-buttons
   "Returns a <div> element with buttons for loading a file.
@@ -57,6 +79,11 @@
    [:br]
    "Data File: "
    (sab/file-upload {:id "dfile"} "datafile")
+   [:br]
+   (sab/check-box
+    {:onClick (fn [] (show-graph-click))}
+    "show-graph")
+   (sab/label "show-graph" "Show Graphs")
    [:br]
    (sab/submit-button
     {:class "load-button"
@@ -74,9 +101,15 @@
      :onClick
      (fn []
        (let [ip (.getElementById js/document "file")
-             df (.getElementById js/document "dfile")]
+             df (.getElementById js/document "dfile")
+             in (.getElementById js/document "json-in")
+             out (.getElementById js/document "json-out")
+             diff (.getElementById js/document "json-diff")]
          (set! (.-value ip) nil)
          (set! (.-value df) nil)
+         (set! (.-innerText in) "")
+         (set! (.-innerText out) "")
+         (set! (.-innerText diff) "")
          (reset! app-data nil)))}
     "Clear")
    ])
@@ -87,14 +120,8 @@
    (sab/submit-button
     {:class "process-button"
      :onClick
-     (fn [] (when (:rules @app-state) (process app-state)))}
+     (fn [] (process app-state))}
     "Process")])
-
-(defn rule-text
-  [rules]
-  [:table
-   [:tbody
-    (vec (map (fn [rule] [:tr [:td (rule->str rule)]]) rules))]])
 
 (defn axiom-text
   [db]
@@ -118,22 +145,30 @@
                (load-file-buttons app-data)
                [:br]
                (process-button app-data)
-               (if rules
-                 [:div
-                  [:hr]
-                  [:h2 "Rules:"]
-                  (rule-text rules)]
-                 [:div])
-               (if in
-                 [:div
-                  [:hr]
-                  [:h2 "Input: "]
-                  (axiom-text in)
-                  (if out
-                    [:div
-                     [:hr]
-                     [:h2 "Output: "]
-                     (axiom-text out)]
-                    [:hr])]
-                 [:hr])])))
+               [:div
+                [:hr]
+                [:h2 "Rules:"]
+                (sab/text-area {:rows 10 :cols 80 :id "rules"} "")]
+               [:div {:class "in-out"}
+                [:div [:p "In"]]
+                [:div [:p "Out"]]
+                [:div [:p "Changes"]]]
+               [:div {:class "in-out"}
+                [:div [:pre {:id "json-in"}]]
+                [:div [:pre {:id "json-out"}]]
+                [:div [:pre {:id "json-diff"}]]]
+               [:div
+                [:div {:id "graphs" :hidden true}
+                 (if in
+                   [:div
+                    [:hr]
+                    [:h2 "Input: "]
+                    (axiom-text in)
+                    (if out
+                      [:div
+                       [:hr]
+                       [:h2 "Output: "]
+                       (axiom-text out)]
+                      [:hr])]
+                   [:hr])]]])))
 
